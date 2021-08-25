@@ -6,7 +6,11 @@ function gameLoop() {
 	player.updateY();
 	platforms.forEach(function(plat) {
 		player.playerCollideY(plat);
-	});	
+	});
+	if (player.respawn_point[1]<200) {
+		player.respawn();
+		camera.center(player, platforms);
+	}
 	player.updateX();
 	platforms.forEach(function(plat) {
 		player.playerCollideX(plat);

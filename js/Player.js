@@ -1,5 +1,6 @@
 class Player {
 	constructor(x, y, w, h) {
+		this.respawn_point = [x, y]
 		this.x = x;
 		this.y = y;
 		this.xv = 0;
@@ -50,7 +51,6 @@ class Player {
 		if (this.x<obj.x+obj.w && this.x>obj.x+obj.w-cb && this.y+this.h>obj.y && this.y<obj.y+obj.h) {//left
 			this.x = obj.x+obj.w;
 			this.xv = 0;
-			console.log("left");
 		//right of player
 		} if (this.x+this.w>obj.x && this.x+this.w<obj.x+cb && this.y+this.h>obj.y && this.y<obj.y+obj.h) {//right
 			this.x = obj.x-this.w;
@@ -82,15 +82,19 @@ class Player {
 	}
 	updateX() {
 		this.x += this.xv;
-		//collision
+		//collision below arent needed due to Camera.js
 		//	left collide
-		if (this.x<0) {
+		/*if (this.x<0) {
 			this.x = 0;
 		}
 		//	right collide
 		if (this.x+this.w>_SIZE[0]) {
 			this.x = _SIZE[0]-this.w;
-		}
+		}*/
+	}
+	respawn() {
+		this.x = this.respawn_point[0];
+		this.y = this.respawn_point[1];
 	}
 	draw() {
 		ctx.fillStyle = this.color;

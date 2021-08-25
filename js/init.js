@@ -3,8 +3,8 @@ var ctx = c.getContext("2d");
 
 var _SIZE = [c.width, c.height];
 var player = new Player(350, 350, 50, 75);
-var platforms = [new LevelBorder(-200, 0, 200, 700),
-				new LevelBorder(-200, 700, 900, 200),
+var platforms = [new LevelBorder(-200, -700, 200, 1400),
+				new LevelBorder(-200, 700, 1600, 200),
 				new Platform(200, 500, 150, 50), 
 				new Platform(210, 380, 140, 200),
 				new Platform(211, 100, 150, 50),
