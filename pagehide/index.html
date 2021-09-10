@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head><title>Page Hide</title></head>
+<body>
+<button id="numBut" onclick="addNum()" style="width: 200px; height: 75px;">0</button>
+<script>
+var button = document.getElementById("numBut");
+var num = 0;
+
+function addNum() {
+	num++;
+	button.textContent = num;
+}
+window.addEventListener("load", function(e) {
+	console.log("loaded");
+	try {
+		num = localStorage.getItem("number");
+		button.textContent = num;
+	} catch {
+		console.log("dont exist, creating");
+	}
+});
+window.addEventListener("beforeunload", function(e) {
+	console.log("hide");
+	localStorage.setItem("number", button.textContent-1);
+});
+</script>
+</body>
+</html>
