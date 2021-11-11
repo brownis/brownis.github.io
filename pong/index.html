@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html>
+	<head><title>Better Pong</title></head>
+	<body>
+		<style>
+		#game {
+			display: block;
+			/*margin: auto;*/
+		}
+		#content {
+			display: flex;
+			align-items: center;
+			justify-content: space-evenly;
+		}
+		#settings {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+		}
+		p {
+			display: block;
+			margin: auto;
+		}
+		</style>
+		<div id="content">
+			<div id="player one">
+				<h1>Player 1:</h1>
+				<div id="settings">
+					<p>Dashing:</p>
+					<input type="checkbox" id="1dashing" checked></input>
+					<p>Baby Mode:</p>
+					<input type="checkbox" id="1baby"></input>
+					<p>Bot:</p>
+					<input type="checkbox" id="1bot"></input>
+					<p>Draw Bot Lines:</p>
+					<input type="checkbox" id="1drawbot"></input>	
+				</div>
+			</div>
+			<canvas id="game" width="800" height="600" style="background-color: #000000;"></canvas>
+			<div id="player two">
+				<h1>Player 2:</h1>
+				<div id="settings">
+					<p>Dashing:</p>
+					<input type="checkbox" id="2dashing" checked></input>
+					<p>Baby Mode:</p>
+					<input type="checkbox" id="2baby"></input>
+					<p>Bot:</p>
+					<input type="checkbox" id="2bot"></input>
+					<p>Draw Bot Lines:</p>
+					<input type="checkbox" id="2drawbot"></input>		
+				</div>
+			</div>
+		</div>
+		<script>
+		var c = document.getElementById("game");
+		var ctx = c.getContext("2d");
+		
+		_KEYS = {}; //the keys that are currently pressed
+		
+		//all the checkboxes
+		var p1chk = [ //player 1 checkboxes
+			document.getElementById("1dashing"),
+			document.getElementById("1baby"),
+			document.getElementById("1bot"),
+			document.getElementById("1drawbot")
+		];
+		var p2chk = [ //player 2 checkboxes
+			document.getElementById("2dashing"),
+			document.getElementById("2baby"),
+			document.getElementById("2bot"),
+			document.getElementById("2drawbot")
+		];
+		//the actual game settings
+		player1settings = [
+			p1chk[0].checked,
+			p1chk[1].checked,
+			p1chk[2].checked,
+			p1chk[3].checked,
+		];
+		player2settings = [
+			p2chk[0].checked,
+			p2chk[1].checked,
+			p2chk[2].checked,
+			p2chk[3].checked,
+		];
+		
+		function checkBoxChanges() { //checks if any of the checkboxes have been changed
+			anyChanges = false; //will be true if changes detected
+			for (let i=0; i<4; i++) {
+				console.log(i);
+				if (p1chk[i].checked != player1settings[i]) {
+					anyChanges = true; //changes for player 1
+					console.log("changes for p1 detected");
+				}
+				if (p2chk[i].checked != player2settings[i]) {
+					anyChanges = true; //changes for player 2
+					console.log("changes p2 detected");
+				}
+			}
+			if (anyChanges) { 
+				player1settings = [ //reassign player 1 and 2 settings
+					p1chk[0].checked,
+					p1chk[1].checked,
+					p1chk[2].checked,
+					p1chk[3].checked,
+				];
+				player2settings = [
+					p2chk[0].checked,
+					p2chk[1].checked,
+					p2chk[2].checked,
+					p2chk[3].checked,
+				];
+				init(player1settings, player2settings);
+			}				
+		}
+		
+		document.addEventListener('keydown', function (e) {
+		_KEYS[e.code] = true;
+		});
+		document.addEventListener('keyup', function (e) {
+		_KEYS[e.code] = false;
+		});
+		
+		class Paddle {
+			constructor(player, dashing, babyMode, bot, drawBot) {
+				this.player = player;
+				this.canDash = dashing;
+				this.isBot = bot;
+				this.drawBotLines = drawBot;
+				this.babyMode = babyMode;
+				//baby mode
+				if (this.babyMode) {
+					this.linexy = []
+				}
+				
+				this.oriDashCooldown = 300;
+				this.dashCooldown = 0;
+				/*this.movement = { //this variable is only used by bots
+					up: false,
+					down: false
+				};*/
+				this.afterimages = [];
+				
+				this.currColor = 0;
+				this.oriColorSpeed = 2; //how many frames it takes to change color
+				this.colorSpeed = this.oriColorSpeed;
+				this.color = "#cccccc";
+				this.colors = [
+				"#cccccc",
+				"#b9cfb9",
+				"#a7d2a7",
+				"#94d594",
+				"#82d882",
+				"#6fdb6f",
+				"#5ddf5d",
+				"#4ae24a",
+				"#38e538",
+				"#25e825",
+				"#13eb13",
+				"#00ee00",
+				"#00ee00",
+				"#00e100",
+				"#00d500",
+				"#00c800",
+				"#00bb00"
+				];
+				this.afterimageColors = [
+				"#000000",
+				"#333333",
+				"#666666",
+				"#999999",
+				"#CCCCCC"
+				];
+				
+				this.score = 0;
+				//bounds
+				this.w = 15;
+				this.h = 100;
+				this.y = c.height/2-this.h/2;
+				this.buf = 40;
+				//movement
+				this.v = 0;
+				this.max_v = 6;
+				this.a = 0.5;
+				if (player == 1) {
+					this.x = 0+this.buf;
+				} else {//player == 2
+					this.x = c.width-this.buf-this.w;
+				}
+			}
+			goal() {//when this paddle gets a goal
+				this.score += 1;
+				pointsText.scores[this.player-1] = this.score;
+				pointsText.text = pointsText.scores[0].toString()+" | "+pointsText.scores[1].toString();
+				ball.reset(this.player);
+			}
+			handleInputs() {
+				if (!this.isBot) { //if this paddle is NOT a robot
+					if (this.player == 1) {
+						if (_KEYS["KeyW"]) {
+							if (this.canDash && this.dashCooldown == 0 && (_KEYS["KeyA"] || _KEYS["KeyD"])) {//dash
+								this.dashCooldown = this.oriDashCooldown;
+								//dash upwards
+								this.v = -15;
+							}
+							
+							if (this.v > 0) {
+								this.v = 0;
+							}
+							this.v -= this.a;
+							if (this.v < -this.max_v) {
+								this.v += this.a;
+							}
+						} else {//not pressed
+							if (this.v < 0) {
+								this.v += this.a;
+							}
+						} if (_KEYS["KeyS"]) {
+							if (this.canDash && this.dashCooldown == 0 && (_KEYS["KeyA"] || _KEYS["KeyD"])) {//dash
+								this.dashCooldown = this.oriDashCooldown;
+								//dash downwards
+								this.v = 15;
+							}
+							if (this.v < 0) {
+								this.v = 0;
+							}
+							this.v += this.a;
+							if (this.v > this.max_v) {
+								this.v -= this.a;
+							}						
+						} else {
+							if (this.v > 0) {
+								this.v -= this.a
+							}
+						}
+					} else {//player == 2
+						if (_KEYS["ArrowUp"]) {
+							if (this.canDash && this.dashCooldown == 0 && (_KEYS["ArrowLeft"] || _KEYS["ArrowRight"])) {//dash
+								this.dashCooldown = this.oriDashCooldown;
+								//dash upwards
+								this.v = -15;
+							}
+							if (this.v > 0) {
+								this.v = 0;
+							}
+							this.v -= this.a;
+							if (this.v < -this.max_v) {
+								this.v += this.a;
+							}
+						} else {//not pressed
+							if (this.v < 0) {
+								this.v += this.a;
+							}
+						} if (_KEYS["ArrowDown"]) {
+							if (this.canDash && this.dashCooldown == 0 && (_KEYS["ArrowLeft"] || _KEYS["ArrowRight"])) {//dash
+								this.dashCooldown = this.oriDashCooldown;
+								//dash upwards
+								this.v = 15;
+							}
+							if (this.v < 0) {
+								this.v = 0;
+							}
+							this.v += this.a;
+							if (this.v > this.max_v) {
+								this.v -= this.a;
+							}						
+						} else {
+							if (this.v > 0) {
+								this.v -= this.a
+							}
+						}
+					}
+				} else {//this paddle IS a robot
+					//below is original bot code, very bad
+					/*if (ball.y > this.y+this.h/2) {//if ball is below center of paddle
+						if (this.v < 0) { //emulate down key press
+							this.v = 0;
+						}
+						this.v += this.a;
+						if (this.v > this.max_v) {
+							this.v = this.max_v;
+						}
+					}
+					if (ball.y < this.y+this.h/2) {//ball above center
+						if (this.v > 0) {
+							this.v = 0;
+						}
+						this.v -= this.a;
+						if (this.v < -this.max_v) {
+							this.v = -this.max_v;
+						}					
+					}*/
+					
+					//BELOW IS NEW CODE FOR BOT - MODIFIED BABYMODE
+					if (this.player == 1 && ball.xv > 0) {//this p1 and ball move away
+						this.botLine = [];
+						this.yPoint = -10; //offscreen
+						this.gotoY = -10;
+						this.gotPos = false; //if the bot has figured out the y pos to go to
+					} else if (this.player == 2 && ball.xv < 0) {//this p2 and ball move away
+						this.botLine = [];
+						this.yPoint = -10; //offscreen
+						this.gotoY = -10;
+						this.gotPos = false; //if the bot has figured out the y pos to go to
+					}
+					if ((this.player == 1 && ball.xv < 0) || (this.player == 2 && ball.xv > 0)) {
+						var yv = ball.yv;
+						var x = ball.x
+						var y = ball.y
+						this.linexy = [];
+						while (true) {
+							if (yv < -0.01) {//ball moving up
+								var ratio = -y/yv;//how many yvs to reach top of screen
+								var lineX = x+ratio*ball.xv;
+								//this.linexy.push([x, y, lineX, ball.radius]);
+								//console.log(x);
+								if (lineX > paddles[1].x || lineX < paddles[0].x+paddles[0].w) {
+									this.botLine = [x, y, lineX, ball.radius];
+									break;
+								}
+								yv *= -1;
+								x = lineX;
+								y = ball.radius;
+							} else if (yv > 0.01) {//ball moving down
+								var ratio = (c.height-y)/yv;
+								var lineX = x+ratio*ball.xv;
+								//this.linexy.push([x, y, lineX, c.height-ball.radius]);
+								//console.log(x)
+								if (lineX > paddles[1].x || lineX < paddles[0].x+paddles[0].w) {
+									this.botLine = [x, y, lineX, c.height-ball.radius];
+									break;
+								}
+								yv *= -1;
+								x = lineX;
+								y = c.height-ball.radius;
+							} else {//if the line is straight
+								if (ball.xv > 0) {//ball moving right
+									this.botLine = [ball.x, ball.y, c.width, ball.y];
+									//this.linexy.push([x, y, c.width, y]);
+								} else if (ball.xv < 0) {//ball moving left
+									this.botLine = [ball.x, ball.y, 0, ball.y];
+								}
+								break;
+							}
+						} //once out of loop will have botLine
+						//get equation for the "graph" of the line y=mx+c
+						//botline[2] and [3] are basically x and y
+						var grad = (this.botLine[1]-this.botLine[3])/(this.botLine[0]-this.botLine[2]);
+						var y_intc = this.botLine[3]-(grad*this.botLine[2]); //y intercept or c
+						if (this.player == 1) {
+							this.yPoint = grad*(this.x+this.w)+y_intc; //y point of line
+						} else {//this.player == 2
+							this.yPoint = grad*this.x+y_intc;
+						}
+						if (!this.gotPos) {
+							this.gotPos = true;
+							this.gotoY = this.yPoint+(Math.random()*this.h)-this.h/2;
+						}
+						//Make the paddle move to the gotoY
+						if (this.gotoY > this.y+this.h/2) {//if ball is below center of paddle
+							if (this.v < 0) { //emulate down key press
+								this.v = 0;
+							}
+							this.v += this.a;
+							if (this.v > this.max_v) {
+								this.v = this.max_v;
+							}
+						}
+						if (this.gotoY < this.y+this.h/2) {//ball above center
+							if (this.v > 0) {
+								this.v = 0;
+							}
+							this.v -= this.a;
+							if (this.v < -this.max_v) {
+								this.v = -this.max_v;
+							}					
+						}
+					}
+				}
+			}
+			update() {
+				//BABY MODE
+				if (this.babyMode) {
+					if (this.player == 1 && ball.xv > 0) {//this p1 and ball move away
+						this.linexy = [];
+					} else if (this.player == 2 && ball.xv < 0) {//this p2 and ball move away
+						this.linexy = [];
+					}
+					if ((this.player == 1 && ball.xv < 0) || (this.player == 2 && ball.xv > 0)) {
+						var yv = ball.yv;
+						var x = ball.x
+						var y = ball.y
+						this.linexy = [];
+						while (true) {
+							if (yv < -0.01) {//ball moving up
+								var ratio = -y/yv;//how many yvs to reach top of screen
+								var lineX = x+ratio*ball.xv;
+								this.linexy.push([x, y, lineX, ball.radius]);
+								if (x > c.width || x < 0) {
+									break;
+								}
+								yv *= -1;
+								x = lineX;
+								y = ball.radius;
+							} else if (yv > 0.01) {
+								var ratio = (c.height-y)/yv;
+								var lineX = x+ratio*ball.xv;
+								this.linexy.push([x, y, lineX, c.height-ball.radius]);
+								if (x > c.width || x < 0) {
+									break;
+								}
+								yv *= -1;
+								x = lineX;
+								y = c.height-ball.radius;
+							} else {//if the line is straight
+								if (ball.xv > 0) {//ball moving right
+									this.linexy = [[ball.x, ball.y, c.width, ball.y]];
+									//this.linexy.push([x, y, c.width, y]);
+								} else if (ball.xv < 0) {//ball.xv < 0
+									this.linexy = [[ball.x, ball.y, 0, ball.y]];
+								}
+								break;
+							}
+						}
+					}
+				}
+				//AFTERIMAGES
+				this.afterimages.forEach(function (aftimg) {
+					aftimg.update();
+				});
+				this.dashCooldown -= 1;
+				if (this.dashCooldown == 0) {//if cooldown just came background
+					this.currColor = this.colors.length-1
+					this.color = this.colors[this.currColor];
+					this.colorSpeed = this.oriColorSpeed;
+				} else {
+					switch (this.dashCooldown) {
+						case 299:		
+							this.afterimages[0] = new Afterimage("rect", [this.x, this.y, this.w, this.h], this.afterimageColors, this.oriColorSpeed);
+							break;						
+						case 292:	
+							this.afterimages[1] = new Afterimage("rect", [this.x, this.y, this.w, this.h], this.afterimageColors, this.oriColorSpeed);
+							break;	
+						case 285:		
+							this.afterimages[2] = new Afterimage("rect", [this.x, this.y, this.w, this.h], this.afterimageColors, this.oriColorSpeed);
+							break;						
+						case 278:	
+							this.afterimages[3] = new Afterimage("rect", [this.x, this.y, this.w, this.h], this.afterimageColors, this.oriColorSpeed);
+							break;	
+					}
+					for (let i=0; i<this.afterimages.length; i++) {
+						if (this.afterimages[i] != undefined && this.afterimages[i].currColor < 0) {
+							delete this.afterimages[i];
+						}
+					}
+					/*this.afterimages.forEach(function(aftimg) {
+						if (aftimg.currColor < 0) {
+							delete aftimg;
+						}
+					});*/
+					this.colorSpeed -= 1;
+					if (this.colorSpeed < 0) {
+						this.colorSpeed = this.oriColorSpeed;
+						this.currColor -= 1;
+					}
+					if (this.currColor < 0) {
+						this.currColor = 0;
+					}
+					this.color = this.colors[this.currColor];
+				}
+				if (this.dashCooldown < 0) {
+					this.dashCooldown = 0;
+				}
+				this.y += this.v;
+				if (this.y < 0) {
+					this.y = 0;
+				}
+				if (this.y+this.h > c.height) {
+					this.y = c.height-this.h;
+				}
+			}
+			draw() {
+				ctx.fillStyle = this.color;
+				ctx.fillRect(this.x, this.y, this.w, this.h);
+				//BABY MODE
+				if (this.babyMode) {
+					this.linexy.forEach(function (line) {
+						ctx.beginPath();
+						ctx.moveTo(line[0], line[1]);
+						ctx.lineTo(line[2], line[3]);
+						ctx.strokeStyle = "#ff00ff";
+						ctx.lineWidth = 3;
+						ctx.stroke();	
+					});
+				} if (this.isBot && this.drawBotLines) {
+					ctx.beginPath();
+					ctx.moveTo(this.botLine[0], this.botLine[1]);
+					ctx.lineTo(this.botLine[2], this.botLine[3]);
+					ctx.strokeStyle = "#ffff00";
+					ctx.lineWidth = 3;
+					ctx.stroke();	
+					
+					ctx.beginPath();
+					ctx.moveTo(0, this.yPoint);
+					ctx.lineTo(c.width, this.yPoint);
+					ctx.strokeStyle = "#00ff00";
+					ctx.lineWidth = 1;
+					ctx.stroke();
+					
+					ctx.beginPath();
+					ctx.moveTo(0, this.gotoY);
+					ctx.lineTo(c.width, this.gotoY);
+					ctx.strokeStyle = "#00ffff";
+					ctx.lineWidth = 2;
+					ctx.stroke();
+				}
+			}
+		}
+		
+		class Afterimage {
+			constructor(type, xywh, colors, colorSpeed) {
+				this.type = type;
+				if (this.type == "rect") {
+					this.x = xywh[0];
+					this.y = xywh[1];
+					this.w = xywh[2];
+					this.h = xywh[3];
+				} else if (this.type == "circ") {
+					this.x = xywh[0];
+					this.y = xywh[1];
+					this.radius = xywh[2];
+				}
+				this.colors = colors;
+				this.currColor = colors.length-1
+				this.color = colors[this.currColor]; //should be changed later
+				this.oriColorSpeed = colorSpeed;
+				this.colorSpeed = this.oriColorSpeed; //how fast it changes between colors
+			}
+			update() {
+				this.colorSpeed -= 1
+				if (this.colorSpeed < 0) {
+					this.colorSpeed = this.oriColorSpeed;
+					this.currColor -= 1;
+				}
+				this.color = this.colors[this.currColor];
+				//when currcolor < 0 kill this
+			}
+			draw() {
+				ctx.fillStyle = this.color;
+				if (this.type == "rect") {
+					ctx.fillRect(this.x, this.y, this.w, this.h);
+				} else if (this.type == "circ") {
+					ctx.beginPath();
+					ctx.fillStyle = this.color;
+					ctx.arc(this.x, this.y, this.radius, 0, 2*Math.PI);
+					ctx.closePath();
+					ctx.fill();				
+				}
+			}
+		}
+		
+		class Ball {
+			constructor(xy, rad) {
+				this.color = "#ffffff";
+				//bounds
+				this.x = xy[0];
+				this.y = xy[1];
+				this.radius = rad;
+				//afterimages
+				this.oriAfterimageTime = 12; //used to count down and reset the afterimages
+				this.afterimageTime = this.oriAfterimageTime;
+				this.afterimageColors = [
+					"#000000",
+					"#404040",
+					"#808080",
+					"#BFBFBF",
+					"#FFFFFF"
+				]
+				//Afterimage("circ", [this.x, this.y, this.radius], this.afterimageColors, 2)
+				this.afterimages = [//-this.radius for x and y so its offscreen
+					new Afterimage("circ", [-this.radius, -this.radius, this.radius], this.afterimageColors, 2),
+					new Afterimage("circ", [-this.radius, -this.radius, this.radius], this.afterimageColors, 2),
+					new Afterimage("circ", [-this.radius, -this.radius, this.radius], this.afterimageColors, 2),
+					new Afterimage("circ", [-this.radius, -this.radius, this.radius], this.afterimageColors, 2)
+					];
+				//movement
+				this.ori_speed = 10;
+				this.speed = this.ori_speed;
+				this.max_speed = 25;
+				this.xv = -Math.cos(-Math.PI/4)*this.speed; //starting veolicty
+				this.yv = -Math.sin(-Math.PI/4)*this.speed;
+				this.acceleration = 0.4;//how much the ball speeds up each time it bounces off a paddle
+			
+				this.freezeTime = 0; //frames the ball is frozen for
+			}
+			reset(player) {//for when a player scores
+				this.freezeTime = 90;
+				this.speed = this.ori_speed;
+				if (player == 1) {// if player == 1 give ball to plyr 2
+					this.x = paddles[1].x-20;
+					this.y = paddles[1].y+paddles[1].h/2;
+					this.xv = -this.speed;
+					this.yv = 0;
+				} else {//player == 2
+					this.x = paddles[0].x+paddles[0].w+20;
+					this.y = paddles[0].y+paddles[0].h/2;
+					this.xv = this.speed;
+					this.yv = 0;				
+				}
+			}			
+			update() {
+				//FREZING
+				this.freezeTime -= 1;
+				if (this.freezeTime == 0) {//just hit zero
+					//make xv at an angle away from the center of the paddle
+				}
+				if (this.freezeTime < 0) {
+					this.freezeTime = 0;
+					this.x += this.xv;
+					this.y += this.yv;
+				}					
+				//AFTERIMAGES
+				this.afterimages.forEach(function (aftimg) {
+					aftimg.update();
+				}); //this updates current afterimages
+
+				this.afterimageTime -= 1;
+				if (this.afterimageTime == 0) {
+					this.afterimageTime = this.oriAfterimageTime;
+				}
+				switch (this.afterimageTime) {
+					case 12:		
+						this.afterimages[0] = new Afterimage("circ", [this.x, this.y, this.radius], this.afterimageColors, 2);
+						break;						
+					case 9:	
+						this.afterimages[1] = new Afterimage("circ", [this.x, this.y, this.radius], this.afterimageColors, 2);
+						break;	
+					case 6:		
+						this.afterimages[2] = new Afterimage("circ", [this.x, this.y, this.radius], this.afterimageColors, 2);
+						break;						
+					case 3:	
+						this.afterimages[3] = new Afterimage("circ", [this.x, this.y, this.radius], this.afterimageColors, 2);
+						break;	
+				}
+				for (let i=0; i<this.afterimages.length; i++) {
+					if (this.afterimages[i] != undefined && this.afterimages[i].currColor < 0) {
+						delete this.afterimages[i];
+					}
+				}
+				
+				//WALL COLLISIONS
+				if (this.x+this.radius > c.width) {//hit right wall
+					/*this.xv *= -1;
+					this.x = c.width-this.radius;*/
+					paddles[0].goal();
+				} else if (this.x-this.radius < 0) {//left wall
+					/*this.xv *= -1;
+					this.x = this.radius;*/
+					paddles[1].goal();
+				} else if (this.y+this.radius > c.height) {//bot wall
+					this.yv *= -1;
+					this.y = c.height-this.radius;
+				} else if (this.y-this.radius < 0) {//top wall
+					this.yv *= -1;
+					this.y = this.radius;
+				}
+			}
+			testCollide(paddle) {
+				if (this.y+this.radius > paddle.y && this.y-this.radius < paddle.y+paddle.h && this.x+this.radius > paddle.x && this.x-this.radius < paddle.x+paddle.w) {//if collide x & y
+					if (this.xv > 0) { //collide with left side of paddle because ball moving to the right
+						this.x = paddle.x-this.radius;
+						this.xv *= -1; //flip ball and repositions it
+												
+						var minAngle = 3*Math.PI/5;
+						var maxAngle = 7*Math.PI/5;
+						var angleDif = maxAngle-minAngle;
+						var padPos = this.y-paddle.y;//the pos on the paddle the ball hit
+						var h = paddle.h;
+						
+						var newAngle = minAngle+angleDif/h*padPos;//gets new angle to bounce off at
+						
+						this.speed += this.acceleration;
+						if (this.speed > this.max_speed) {
+							this.speed = this.max_speed;
+						}
+						
+						this.xv = Math.cos(newAngle)*this.speed;
+						this.yv = -Math.sin(newAngle)*this.speed;
+					} else if (this.xv < 0) { //collide with right side of paddle because ball moving left
+						this.x = paddle.x+paddle.w+this.radius;
+						this.xv *= -1;
+						
+						var minAngle = 2*Math.PI/5;
+						var maxAngle = -minAngle;
+						var angleDif = maxAngle-minAngle;
+						var padPos = this.y-paddle.y;
+						var h = paddle.h;
+						
+						var newAngle = minAngle+angleDif/h*padPos;
+						
+						this.speed += this.acceleration;
+						if (this.speed > this.max_speed) {
+							this.speed = this.max_speed;
+						}
+						
+						this.xv = Math.cos(newAngle)*this.speed;
+						this.yv = -Math.sin(newAngle)*this.speed;
+					}
+				}
+			}
+			draw() {
+				ctx.beginPath();
+				ctx.fillStyle = this.color;
+				ctx.arc(this.x, this.y, this.radius, 0, 2*Math.PI);
+				ctx.closePath();
+				ctx.fill();
+				
+				//LINE TO PADDLE
+				ctx.beginPath();
+				ctx.moveTo(this.x, this.y);
+				if (this.xv > 0) {//moving right so next to left paddle
+					ctx.lineTo(paddles[0].x+paddles[0].w, paddles[0].y+paddles[0].h/2);
+				} else {//this.xv < 0
+					ctx.lineTo(paddles[1].x, paddles[1].y+paddles[1].h/2);
+				}
+				ctx.strokeStyle = "#00ffff";
+				//ctx.stroke();
+				
+			}
+		}
+		
+		function init(ply1set, ply2set) {
+			pointsText = {
+				scores: [0, 0],
+				text: "0 | 0" //starting text
+			}
+			paddles = [new Paddle(1, ply1set[0], ply1set[1], ply1set[2], ply1set[3]), new Paddle(2, ply2set[0], ply2set[1], ply2set[2], ply2set[3])];
+			ball = new Ball([200, 200], 5);
+			ball.reset();
+		}
+		
+		function gameLoop() {
+			//CHECK FOR HTML CHANGES
+			//CHECKBOXES
+			checkBoxChanges();
+			//HANDLE INPUTS
+				//inputs for paddles
+			paddles.forEach(function (paddle) {
+				paddle.handleInputs();
+			});
+				//restarting
+			if (_KEYS["KeyR"]) {
+				init(player1settings, player2settings);
+				_KEYS["KeyR"] = false;
+			}
+			//UPDATE - MOVE THINGS
+			ball.update();
+			paddles.forEach(function (paddle) {
+				paddle.update();
+				ball.testCollide(paddle);
+			});
+			//DRAW
+			ctx.clearRect(0, 0, c.width, c.height);
+			ball.afterimages.forEach(function (aftimg) {
+				aftimg.draw();
+			});// afterimages are drawn outside of the ball draw()
+			//this is because the layering is funky so problem solved ig
+			paddles.forEach(function (paddle) {
+				paddle.afterimages.forEach(function (aftimg) {
+					aftimg.draw();
+				});
+			});
+			ball.draw(); //ball first so the afterimages dont go infront of paddles
+			paddles.forEach(function (paddle) {
+				paddle.draw();
+			});
+				//draw points text
+			ctx.textAlign = "center";
+			ctx.font = 'bold 60px Arial';
+			ctx.fillStyle = "#ffffff";
+			ctx.fillText(pointsText.text, c.width/2, 70);
+		}
+		/*movie monday 
+		team up tuesday
+		workplace wednesday
+		throwback thursday
+		
+		
+		Press r to restart*/
+		
+		init(player1settings, player2settings);
+		setInterval(gameLoop, 17);
+		</script>
+	</body>
+</html>
